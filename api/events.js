@@ -1,15 +1,26 @@
 // api/events.js
 // Frontend polls this to get current state + recent events
 
-const KV_URL = process.env.KV_REST_API_URL
-const KV_TOKEN = process.env.KV_REST_API_TOKEN
+const CAPPI_SECRET = process.env.CAPPI_SECRET || 'changeme'
 
-async function kvGet(key) {
-  const res = await fetch(`${KV_URL}/get/${key}`, {
-    headers: { Authorization: `Bearer ${KV_TOKEN}` }
-  })
-  const data = await res.json()
-  return data.result ? JSON.parse(data.result) : null
+async function blobGet(key) {
+  try {
+    const token = process.env.BLOB_READ_WRITE_TOKEN
+    const listRes = await fetch(
+      `https://blob.vercel-storage.com?prefix=${key}.json&limit=1`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    )
+    const listData = await listRes.json()
+    if (!listData.blobs || listData.blobs.length === 0) return null
+
+    const blobUrl = listData.blobs[0].url
+    const res = await fetch(`${blobUrl}?t=${Date.now()}`)
+    if (!res.ok) return null
+    return await res.json()
+  } catch (err) {
+    console.error(`blobGet(${key}) error:`, err.message)
+    return null
+  }
 }
 
 export default async function handler(req, res) {
@@ -17,12 +28,11 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  // Cache headers - allow short caching since bot polls every 30s
   res.setHeader('Cache-Control', 's-maxage=10, stale-while-revalidate=20')
 
   const [state, events] = await Promise.all([
-    kvGet('cappi:state'),
-    kvGet('cappi:events')
+    blobGet('cappi-state'),
+    blobGet('cappi-events')
   ])
 
   const limit = parseInt(req.query.limit) || 50

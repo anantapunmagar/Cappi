@@ -1,40 +1,48 @@
 // api/event.js
 // Bot calls this endpoint to report player joins/leaves and bot state changes
-// Requires: CAPPI_SECRET env var for auth, KV_REST_API_URL + KV_REST_API_TOKEN for Vercel KV
+// Requires: CAPPI_SECRET env var for auth, BLOB_READ_WRITE_TOKEN for Vercel Blob
 
-const KV_URL = process.env.KV_REST_API_URL
-const KV_TOKEN = process.env.KV_REST_API_TOKEN
+import { put } from '@vercel/blob'
+
 const CAPPI_SECRET = process.env.CAPPI_SECRET || 'changeme'
 
-async function kvGet(key) {
-  const res = await fetch(`${KV_URL}/get/${key}`, {
-    headers: { Authorization: `Bearer ${KV_TOKEN}` }
-  })
-  const data = await res.json()
-  return data.result ? JSON.parse(data.result) : null
+// ===================== BLOB HELPERS =====================
+async function blobGet(key) {
+  try {
+    const token = process.env.BLOB_READ_WRITE_TOKEN
+    const listRes = await fetch(
+      `https://blob.vercel-storage.com?prefix=${key}.json&limit=1`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    )
+    const listData = await listRes.json()
+    if (!listData.blobs || listData.blobs.length === 0) return null
+
+    const blobUrl = listData.blobs[0].url
+    const res = await fetch(`${blobUrl}?t=${Date.now()}`)
+    if (!res.ok) return null
+    return await res.json()
+  } catch (err) {
+    console.error(`blobGet(${key}) error:`, err.message)
+    return null
+  }
 }
 
-async function kvSet(key, value, exSeconds) {
-  const body = exSeconds
-    ? JSON.stringify(['SET', key, JSON.stringify(value), 'EX', exSeconds])
-    : JSON.stringify(['SET', key, JSON.stringify(value)])
-
-  await fetch(`${KV_URL}/pipeline`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${KV_TOKEN}`,
-      'Content-Type': 'application/json'
-    },
-    body
+async function blobSet(key, value) {
+  await put(`${key}.json`, JSON.stringify(value), {
+    access: 'public',
+    token: process.env.BLOB_READ_WRITE_TOKEN,
+    allowOverwrite: true,
+    contentType: 'application/json',
+    cacheControlMaxAge: 0
   })
 }
 
+// ===================== HANDLER =====================
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  // Auth check
   const auth = req.headers['x-cappi-secret']
   if (auth !== CAPPI_SECRET) {
     return res.status(401).json({ error: 'Unauthorized' })
@@ -46,8 +54,12 @@ export default async function handler(req, res) {
 
   const now = timestamp || Date.now()
 
-  // Load existing state
-  let state = (await kvGet('cappi:state')) || {
+  const [state, events] = await Promise.all([
+    blobGet('cappi-state'),
+    blobGet('cappi-events')
+  ])
+
+  const currentState = state || {
     botOnline: false,
     botJoinedAt: null,
     playerCount: 0,
@@ -56,61 +68,58 @@ export default async function handler(req, res) {
     lastUpdated: now
   }
 
-  let events = (await kvGet('cappi:events')) || []
+  let currentEvents = events || []
 
-  // Handle event types
   switch (type) {
     case 'bot_spawn':
-      state.botOnline = true
-      state.botJoinedAt = now
-      events.unshift({ id: now, type, timestamp: now, message: 'Cappi connected to the server' })
+      currentState.botOnline = true
+      currentState.botJoinedAt = now
+      currentEvents.unshift({ id: now, type, timestamp: now, message: 'Cappi connected to the server' })
       break
 
     case 'bot_disconnect':
-      state.botOnline = false
-      state.botJoinedAt = null
-      events.unshift({ id: now, type, timestamp: now, message: 'Cappi disconnected from the server' })
+      currentState.botOnline = false
+      currentState.botJoinedAt = null
+      currentEvents.unshift({ id: now, type, timestamp: now, message: 'Cappi disconnected from the server' })
       break
 
     case 'player_join':
-      if (player && !state.onlinePlayers.find(p => p.name === player)) {
-        state.onlinePlayers.push({ name: player, joinedAt: now })
+      if (player && !currentState.onlinePlayers.find(p => p.name === player)) {
+        currentState.onlinePlayers.push({ name: player, joinedAt: now })
       }
-      events.unshift({ id: now, type, timestamp: now, player, message: `${player} joined the server` })
+      currentEvents.unshift({ id: now, type, timestamp: now, player, message: `${player} joined the server` })
       break
 
     case 'player_leave':
-      state.onlinePlayers = state.onlinePlayers.filter(p => p.name !== player)
-      events.unshift({ id: now, type, timestamp: now, player, message: `${player} left the server` })
+      currentState.onlinePlayers = currentState.onlinePlayers.filter(p => p.name !== player)
+      currentEvents.unshift({ id: now, type, timestamp: now, player, message: `${player} left the server` })
       break
 
     case 'server_poll':
-      // Regular heartbeat from bot with server status
-      state.playerCount = playerCount ?? state.playerCount
-      state.maxPlayers = maxPlayers ?? state.maxPlayers
-      if (typeof botStatus === 'boolean') state.botOnline = botStatus
+      currentState.playerCount = playerCount ?? currentState.playerCount
+      currentState.maxPlayers = maxPlayers ?? currentState.maxPlayers
+      if (typeof botStatus === 'boolean') currentState.botOnline = botStatus
       break
 
-    case 'chat':
+    case 'chat': {
       const { username, message } = req.body
-      events.unshift({ id: now, type, timestamp: now, player: username, message: `${username}: ${message}` })
+      currentEvents.unshift({ id: now, type, timestamp: now, player: username, message: `${username}: ${message}` })
       break
+    }
 
     default:
       return res.status(400).json({ error: `Unknown event type: ${type}` })
   }
 
-  state.lastUpdated = now
-  if (playerCount !== undefined) state.playerCount = playerCount
-  if (maxPlayers !== undefined) state.maxPlayers = maxPlayers
+  currentState.lastUpdated = now
+  if (playerCount !== undefined) currentState.playerCount = playerCount
+  if (maxPlayers !== undefined) currentState.maxPlayers = maxPlayers
 
-  // Keep last 200 events
-  events = events.slice(0, 200)
+  currentEvents = currentEvents.slice(0, 200)
 
-  // Save
   await Promise.all([
-    kvSet('cappi:state', state),
-    kvSet('cappi:events', events)
+    blobSet('cappi-state', currentState),
+    blobSet('cappi-events', currentEvents)
   ])
 
   return res.status(200).json({ ok: true })
