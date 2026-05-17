@@ -1,0 +1,110 @@
+.app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.main {
+  flex: 1;
+  max-width: 1200px;
+  margin: 0 auto;
+  width: 100%;
+  padding: 28px 24px 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.section-full { width: 100%; }
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+}
+
+.bottom-grid {
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  padding-top: 12px;
+  border-top: 1px solid var(--card-border);
+}
+
+.footer-mono { color: var(--text-muted); }
+.footer-sep { color: var(--text-dim); }
+
+/* Loading */
+.loading-screen {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+}
+
+.loading-moon {
+  font-size: 48px;
+  filter: drop-shadow(0 0 16px rgba(196, 181, 253, 0.5));
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+.loading-text {
+  font-family: var(--mono);
+  font-size: 14px;
+  color: var(--text-muted);
+  letter-spacing: 0.05em;
+}
+
+.loading-dots {
+  display: flex;
+  gap: 6px;
+}
+
+.loading-dots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-dim);
+}
+
+.loading-dots span:nth-child(1) { animation: blink 1.2s ease-in-out 0s infinite; }
+.loading-dots span:nth-child(2) { animation: blink 1.2s ease-in-out 0.2s infinite; }
+.loading-dots span:nth-child(3) { animation: blink 1.2s ease-in-out 0.4s infinite; }
+
+.retry-btn {
+  font-family: var(--mono);
+  font-size: 13px;
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  color: var(--text);
+  padding: 8px 20px;
+  border-radius: 8px;
+  cursor: pointer;
+  margin-top: 8px;
+  transition: all 0.15s ease;
+}
+
+.retry-btn:hover { background: var(--card-hover); border-color: var(--text-dim); }
+
+/* Responsive */
+@media (max-width: 900px) {
+  .stats-grid { grid-template-columns: repeat(2, 1fr); }
+  .bottom-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 600px) {
+  .main { padding: 16px 12px 40px; gap: 14px; }
+  .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+}
