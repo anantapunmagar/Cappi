@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "minecraft-server-util": "^5.4.4",
+    "mineflayer": "^4.37.1"
+  }
+}
