@@ -1,4 +1,4 @@
-# 🌙 Cappi Dashboard
+# Cappi Dashboard
 
 Live monitor dashboard for the Cappi Minecraft bot on `ananta.mcsh.io`.
 
